@@ -19,6 +19,20 @@
 // Initial Release Nov 15, 2018
 // Rev 1 July 16, 2019 - check if slots are full when detecting a key press
 //
+
+// Turns out brightness is controlled by pause and scroll lock https://community.keyboard.io/t/what-are-the-codes-for-the-brightness-control-keys/4094/3
+#define KEY_BRIGHTNESS_INC KEY_PAUSE
+#define KEY_BRIGHTNESS_DEC KEY_SCROLL_LOCK
+
+// Volume keys are different too https://gist.github.com/MightyPork/6da26e382a7ad91b5496ee55fdc73db2
+#define KEY_VOLUME_INC 0x80
+#define KEY_VOLUME_DEC 0x81
+#define KEY_VOLUME_MUTE 0x7f
+
+// Row/Col for special power button
+#define POWER_ROW 1
+#define POWER_COL 4
+
 #define MODIFIERKEY_FN 0x8f   // give Fn key a HID code 
 #define CAPS_LED 13 // Teensy LED shows Caps-Lock
 //
@@ -28,20 +42,21 @@ const byte cols_max = 8; // sets the number of columns in the matrix
 // Load the normal key matrix with the Teensyduino key names described at www.pjrc.com/teensy/td_keyboard.html
 // A zero indicates no normal key at that location.
 //
+
 int normal[rows_max][cols_max] = {
   {0,0,0,0,0,0,0,0},
-  {0,0,0,0,KEY_DELETE,0,0,0},
+  {0,0,0,0,KEY_SYSTEM_SLEEP,0,0,0},
   {0,0,0,0,0,0,0,0},
   {0,0,0,0,0,0,0,0},
-  {KEY_RIGHT,KEY_BACKSPACE,KEY_ENTER,KEY_INSERT,KEY_UP,KEY_QUOTE,KEY_LEFT_BRACE,KEY_MINUS},
+  {KEY_RIGHT,KEY_BACKSPACE,KEY_ENTER,KEY_DELETE,KEY_UP,KEY_QUOTE,KEY_LEFT_BRACE,KEY_MINUS},
   {0,0,KEY_BACKSLASH,KEY_F10,KEY_SLASH,KEY_SEMICOLON,KEY_P,KEY_0},
   {KEY_DOWN,KEY_EQUAL,KEY_RIGHT_BRACE,KEY_F9,KEY_PERIOD,KEY_L,KEY_O,KEY_9},
   {KEY_LEFT,0,0,KEY_F8,KEY_COMMA,KEY_K,KEY_I,KEY_8},
-  {0,0,0,KEY_F7,KEY_M,KEY_J,KEY_U,KEY_7},
-  {0,0,0,KEY_F6,KEY_N,KEY_H,KEY_Y,KEY_6},
-  {0,0,0,KEY_F5,KEY_B,KEY_G,KEY_T,KEY_5},
-  {0,0,0,KEY_F4,KEY_V,KEY_F,KEY_R,KEY_4},
-  {0,0,0,KEY_F3,KEY_C,KEY_D,KEY_E,KEY_3},
+  {0,0,0,KEY_VOLUME_INC,KEY_M,KEY_J,KEY_U,KEY_7},
+  {0,0,0,KEY_VOLUME_DEC,KEY_N,KEY_H,KEY_Y,KEY_6},
+  {0,0,0,KEY_VOLUME_MUTE,KEY_B,KEY_G,KEY_T,KEY_5},
+  {0,0,0,KEY_BRIGHTNESS_INC,KEY_V,KEY_F,KEY_R,KEY_4},
+  {0,0,0,KEY_BRIGHTNESS_DEC,KEY_C,KEY_D,KEY_E,KEY_3},
   {0,0,0,KEY_F2,KEY_X,KEY_S,KEY_W,KEY_2},
   {KEY_TILDE,0,0,KEY_F1,KEY_Z,KEY_A,KEY_Q,KEY_1},
   {KEY_SPACE,0,0,KEY_ESC,0,KEY_CAPS_LOCK,KEY_TAB,0}
@@ -116,7 +131,6 @@ int Row_IO[rows_max] = {12,14,15,16,17,18,19,20,21,22,23,25,24,10,9,8}; // Teens
 // Teensy I/O     # 00,01,02,03,04,05,06,07
 // Breakout       # 08,07,06,05,04,03,02,01
 int Col_IO[cols_max] = {0,1,2,3,4,5,6,7};                       // Teensy LC I/O numbers for columns
-
 
 // Declare variables that will be used by functions
 boolean slots_full = LOW; // Goes high when slots 1 thru 6 contain normal keys
@@ -344,15 +358,30 @@ void loop() {
 // ***********Normal keys and media keys in this section
       else if ((normal[x][y] != 0) || (media[x][y] != 0)) {  // check if normal or media key exists at this location in the array
         if (!digitalRead(Col_IO[y]) && (old_key[x][y]) && (!slots_full)) { // check if key pressed and not previously pressed and slots not full
-          old_key[x][y] = LOW; // Save state of key as "pressed"
-          if (Fn_pressed) {  // Fn_pressed is active low so it is not pressed and normal key needs to be sent
-            load_slot(normal[x][y]); //update first available slot with normal key name
-            send_normals(); // send all slots over USB including the key that just got pressed
+          // Power button special case
+          if (x == POWER_ROW && y == POWER_COL) {
+            Keyboard.press(MODIFIERKEY_CTRL);
+            // Keyboard.press(MODIFIERKEY_ALT);
+            // Keyboard.press(MODIFIERKEY_GUI);
+            Keyboard.press(KEY_MEDIA_EJECT);
+            delay(750);  // Mac OS-X will not recognize a very short eject press
+            Keyboard.release(KEY_MEDIA_EJECT);
+            // Keyboard.release(MODIFIERKEY_ALT);
+            // Keyboard.release(MODIFIERKEY_GUI);
+            Keyboard.release(MODIFIERKEY_CTRL);
+            delay(200);
           }
-          else if (media[x][y] != 0) { // Fn is pressed so send media if a key exists in the matrix
-            Keyboard.press(media[x][y]); // media key is sent using keyboard press function per PJRC    
-            delay(5); // delay 5 milliseconds before releasing to make sure it gets sent over USB
-            Keyboard.release(media[x][y]); // send media key release
+          else {
+            old_key[x][y] = LOW; // Save state of key as "pressed"
+            if (Fn_pressed) {  // Fn_pressed is active low so it is not pressed and normal key needs to be sent
+              load_slot(normal[x][y]); //update first available slot with normal key name
+              send_normals(); // send all slots over USB including the key that just got pressed
+            }
+            else if (media[x][y] != 0) { // Fn is pressed so send media if a key exists in the matrix
+              Keyboard.press(media[x][y]); // media key is sent using keyboard press function per PJRC    
+              delay(5); // delay 5 milliseconds before releasing to make sure it gets sent over USB
+              Keyboard.release(media[x][y]); // send media key release
+            }
           }
         }          
         else if (digitalRead(Col_IO[y]) && (!old_key[x][y])) { //check if key is not pressed, but was previously pressed 
